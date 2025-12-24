@@ -1,17 +1,17 @@
-import React from 'react';
+import React, { forwardRef } from 'react';
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'secondary' | 'ghost';
   fullWidth?: boolean;
 }
 
-export const Button: React.FC<ButtonProps> = ({ 
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(({ 
   children, 
   variant = 'primary', 
   fullWidth = false,
   className = '',
   ...props 
-}) => {
+}, ref) => {
   const baseStyles = "py-4 px-8 rounded-lg text-xl font-heading font-semibold transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed tracking-wide active:scale-98";
   
   const variants = {
@@ -23,10 +23,13 @@ export const Button: React.FC<ButtonProps> = ({
 
   return (
     <button 
+      ref={ref}
       className={`${baseStyles} ${variants[variant]} ${fullWidth ? 'w-full' : ''} ${className}`}
       {...props}
     >
       {children}
     </button>
   );
-};
+});
+
+Button.displayName = 'Button';
