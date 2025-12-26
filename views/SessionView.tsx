@@ -3,12 +3,12 @@ import { Button } from '../components/Button';
 import { KeyHint } from '../components/KeyHint';
 import { ReleaseStep, CoreWant, Language } from '../types';
 import { getGeminiCoaching, suggestCoreWant } from '../services/geminiService';
-import { Check, RefreshCw, Sparkles, X, BookOpen } from 'lucide-react';
+import { Check, RefreshCw, Sparkles, X, BookOpen, Infinity } from 'lucide-react';
 import { GOAL_TEMPLATES, EMOTION_LIST, TRANSLATIONS } from '../constants';
 
 // --- Lotus Component ---
 const LotusBackground: React.FC<{ intensity: number, isComplete: boolean }> = ({ intensity, isComplete }) => {
-  if (isComplete) return null; // Flower disappears on completion
+  if (isComplete) return null;
 
   const totalPetals = 10;
   const visiblePetals = Math.min(totalPetals, Math.max(0, intensity));
@@ -22,7 +22,7 @@ const LotusBackground: React.FC<{ intensity: number, isComplete: boolean }> = ({
         <path 
           d="M100 100 Q 130 50 100 10 Q 70 50 100 100" 
           fill="none" 
-          stroke="#d97706" /* Keep Lotus Gold */
+          stroke="#d97706"
           strokeWidth="1.2"
           className="drop-shadow-sm"
         />
@@ -56,7 +56,9 @@ export const SessionView: React.FC<SessionViewProps> = ({ onExit, lang }) => {
   const [feeling, setFeeling] = useState('');
   const [coreWant, setCoreWant] = useState<CoreWant>(CoreWant.UNKNOWN);
   const [intensity, setIntensity] = useState(10);
-  const [loopCount, setLoopCount] = useState(0);
+  const [isInfiniteMode, setIsInfiniteMode] = useState(false);
+  const [infiniteStep, setInfiniteStep] = useState(0); // 0: Could, 1: Would, 2: When
+  
   const [aiTip, setAiTip] = useState<string>('');
   const [loadingAi, setLoadingAi] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
@@ -70,14 +72,12 @@ export const SessionView: React.FC<SessionViewProps> = ({ onExit, lang }) => {
     setShowTemplates(false);
   }, [step]);
 
-  useEffect(() => {
-    if (step === ReleaseStep.CHECK_STATUS) {
-       const newIntensity = Math.max(0, 10 - loopCount);
-       setIntensity(newIntensity);
-    }
-  }, [step, loopCount]);
-
   const handleNext = () => {
+    if (isInfiniteMode) {
+      setInfiniteStep((prev) => (prev + 1) % 3);
+      return;
+    }
+
     switch (step) {
       case ReleaseStep.DEFINE_GOAL:
         if (goal.trim()) setStep(ReleaseStep.IDENTIFY_FEELING);
@@ -98,13 +98,14 @@ export const SessionView: React.FC<SessionViewProps> = ({ onExit, lang }) => {
         setStep(ReleaseStep.RELEASE_WHEN);
         break;
       case ReleaseStep.RELEASE_WHEN:
+        // Automatically decrement intensity by 1 on each successful loop completion
+        setIntensity(prev => Math.max(0, prev - 1));
         setStep(ReleaseStep.CHECK_STATUS);
         break;
       case ReleaseStep.CHECK_STATUS:
         if (intensity <= 0) { 
           setStep(ReleaseStep.COMPLETION);
         } else {
-          setLoopCount(prev => prev + 1);
           setStep(ReleaseStep.ALLOW_FEELING); 
         }
         break;
@@ -124,14 +125,14 @@ export const SessionView: React.FC<SessionViewProps> = ({ onExit, lang }) => {
             ReleaseStep.RELEASE_WHEN,
             ReleaseStep.CHECK_STATUS 
         ];
-        if (enterSteps.includes(step)) {
+        if (enterSteps.includes(step) || isInfiniteMode) {
             e.preventDefault();
             handleNext();
         }
       }
       if (e.key === 'Backspace') {
           const backspaceSteps = [ReleaseStep.RELEASE_COULD, ReleaseStep.RELEASE_WOULD];
-          if (backspaceSteps.includes(step)) {
+          if (backspaceSteps.includes(step) || isInfiniteMode) {
               e.preventDefault();
               handleNext(); 
           }
@@ -139,7 +140,7 @@ export const SessionView: React.FC<SessionViewProps> = ({ onExit, lang }) => {
     };
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [step]);
+  }, [step, isInfiniteMode, intensity]);
 
 
   const handleManualAiHelp = async () => {
@@ -160,8 +161,58 @@ export const SessionView: React.FC<SessionViewProps> = ({ onExit, lang }) => {
         handleNext();
     }
   };
+
+  const toggleInfiniteMode = () => {
+    setIsInfiniteMode(!isInfiniteMode);
+    if (!isInfiniteMode) {
+      setInfiniteStep(0);
+    }
+  };
+  
+  const renderInfiniteMode = () => {
+    const questions = [
+      { title: t.s5_could_title, desc: t.s5_could_desc },
+      { title: t.s5_would_title, desc: t.s5_would_desc },
+      { title: t.s5_when_title, desc: t.s5_when_desc }
+    ];
+    const current = questions[infiniteStep];
+
+    return (
+      <div className="flex flex-col items-center justify-center space-y-20 animate-in fade-in zoom-in-95 duration-700 text-center py-12 relative z-10 h-full">
+        {/* Goal only: Purely user input, font size 20 as requested, dark color */}
+        <h3 className="text-[20px] font-heading font-black text-slate-950 uppercase tracking-[0.2em] leading-tight max-w-2xl mx-auto">
+          {goal}
+        </h3>
+
+        <div className="space-y-6">
+          <h2 className="text-6xl md:text-7xl font-heading font-bold text-slate-900 drop-shadow-sm">{current.title}</h2>
+          <p className="text-3xl text-slate-500 font-serif italic">{current.desc}</p>
+        </div>
+        
+        <div className="flex gap-8 justify-center mt-8">
+            <Button onClick={handleNext} className="min-w-[160px]">
+              {infiniteStep === 2 ? t.btn_now : t.btn_yes} <KeyHint />
+            </Button>
+            {infiniteStep !== 2 && (
+              <Button onClick={handleNext} variant="secondary" className="min-w-[160px]">
+                {t.btn_no} <KeyHint label="←" />
+              </Button>
+            )}
+        </div>
+        
+        <button 
+          onClick={toggleInfiniteMode}
+          className="absolute bottom-12 text-[10px] font-bold text-slate-200 hover:text-slate-500 uppercase tracking-widest transition-all"
+        >
+          Exit
+        </button>
+      </div>
+    );
+  };
   
   const renderContent = () => {
+    if (isInfiniteMode) return renderInfiniteMode();
+
     switch (step) {
       case ReleaseStep.DEFINE_GOAL:
         return (
@@ -342,6 +393,12 @@ export const SessionView: React.FC<SessionViewProps> = ({ onExit, lang }) => {
                  <Button onClick={handleNext} className="min-w-[160px]">{t.btn_yes} <KeyHint /></Button>
                  <Button onClick={handleNext} variant="secondary" className="min-w-[160px]">{t.btn_no} <KeyHint label="←" /></Button>
             </div>
+            <button 
+                onClick={toggleInfiniteMode}
+                className="mt-8 flex items-center justify-center gap-2 text-xs font-bold text-slate-300 hover:text-amber-600 uppercase tracking-widest transition-colors mx-auto"
+            >
+                <Infinity size={14} /> Infinite Release Mode
+            </button>
           </div>
         );
 
@@ -392,17 +449,19 @@ export const SessionView: React.FC<SessionViewProps> = ({ onExit, lang }) => {
                     </div>
                  </div>
                  
-                 <div className="text-9xl font-heading font-bold text-slate-900 tracking-tighter">{intensity}</div>
+                 <div className="text-9xl font-heading font-bold text-slate-900 tracking-tighter transition-all duration-300">{intensity}</div>
 
                  <p className="text-xl text-slate-500 font-serif italic">
                     {intensity > 0 ? t.s6_result_continue : t.s6_result_done}
                  </p>
                  
-                 {intensity > 0 && (
-                     <div className="mt-8">
+                 <div className="mt-8">
+                    {intensity > 0 ? (
                         <Button onClick={handleNext} className="text-xl">{t.continue_release} <KeyHint /></Button>
-                     </div>
-                 )}
+                    ) : (
+                        <Button onClick={handleNext} className="text-xl">{t.next} <KeyHint /></Button>
+                    )}
+                 </div>
             </div>
         );
       
@@ -424,8 +483,8 @@ export const SessionView: React.FC<SessionViewProps> = ({ onExit, lang }) => {
                         setGoal('');
                         setFeeling('');
                         setIntensity(10);
-                        setLoopCount(0);
                         setCoreWant(CoreWant.UNKNOWN);
+                        setIsInfiniteMode(false);
                     }}>{t.new_goal}</Button>
                 </div>
              </div>
@@ -433,7 +492,9 @@ export const SessionView: React.FC<SessionViewProps> = ({ onExit, lang }) => {
     }
   };
 
-  const progress = Math.max(5, (Object.values(ReleaseStep).indexOf(step) / (Object.values(ReleaseStep).length - 1)) * 100);
+  const progress = isInfiniteMode 
+    ? 100 
+    : Math.max(5, (Object.values(ReleaseStep).indexOf(step) / (Object.values(ReleaseStep).length - 1)) * 100);
 
   return (
     <div className="flex flex-col h-full relative">
@@ -454,29 +515,31 @@ export const SessionView: React.FC<SessionViewProps> = ({ onExit, lang }) => {
             {renderContent()}
         </div>
 
-        <div className="p-8 border-t border-slate-100 bg-white/90 backdrop-blur-sm flex justify-between items-center relative z-20">
-            <div className="text-xs text-slate-400 font-bold tracking-[0.2em] uppercase">
-                {t.step.replace('{{current}}', (Object.values(ReleaseStep).indexOf(step) + 1).toString()).replace('{{total}}', '6')}
-            </div>
-            {step !== ReleaseStep.COMPLETION && step !== ReleaseStep.IDENTIFY_WANT && step !== ReleaseStep.RELEASE_COULD && step !== ReleaseStep.RELEASE_WOULD && step !== ReleaseStep.RELEASE_WHEN && step !== ReleaseStep.ALLOW_FEELING && step !== ReleaseStep.CHECK_STATUS && (
-                <Button 
-                    onClick={handleNext} 
-                    disabled={
-                        (step === ReleaseStep.DEFINE_GOAL && !goal.trim()) ||
-                        (step === ReleaseStep.IDENTIFY_FEELING && !feeling.trim())
-                    }
-                    className="shadow-lg"
-                >
-                    {t.next} <KeyHint />
-                </Button>
-            )}
-            
-            {step === ReleaseStep.ALLOW_FEELING && (
-                 <Button onClick={handleNext} variant="ghost" className="ml-auto text-xl font-bold">
-                    {t.enter} <KeyHint />
-                 </Button>
-            )}
-        </div>
+        {!isInfiniteMode && (
+          <div className="p-8 border-t border-slate-100 bg-white/90 backdrop-blur-sm flex justify-between items-center relative z-20">
+              <div className="text-xs text-slate-400 font-bold tracking-[0.2em] uppercase">
+                  {t.step.replace('{{current}}', (Object.values(ReleaseStep).indexOf(step) + 1).toString()).replace('{{total}}', '6')}
+              </div>
+              {step !== ReleaseStep.COMPLETION && step !== ReleaseStep.IDENTIFY_WANT && step !== ReleaseStep.RELEASE_COULD && step !== ReleaseStep.RELEASE_WOULD && step !== ReleaseStep.RELEASE_WHEN && step !== ReleaseStep.ALLOW_FEELING && step !== ReleaseStep.CHECK_STATUS && (
+                  <Button 
+                      onClick={handleNext} 
+                      disabled={
+                          (step === ReleaseStep.DEFINE_GOAL && !goal.trim()) ||
+                          (step === ReleaseStep.IDENTIFY_FEELING && !feeling.trim())
+                      }
+                      className="shadow-lg"
+                  >
+                      {t.next} <KeyHint />
+                  </Button>
+              )}
+              
+              {step === ReleaseStep.ALLOW_FEELING && (
+                  <Button onClick={handleNext} variant="ghost" className="ml-auto text-xl font-bold">
+                      {t.enter} <KeyHint />
+                  </Button>
+              )}
+          </div>
+        )}
     </div>
   );
 };
